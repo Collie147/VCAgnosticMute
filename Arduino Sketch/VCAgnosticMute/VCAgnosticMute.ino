@@ -1,6 +1,8 @@
 #include "HID-Project.h"
 #include <Adafruit_NeoPixel.h>
-#include <SimpleRotary.h>
+//I've modified the SimpleRotary library to reduce the debounce time to allow for a double click.  
+#include "SimpleRotaryCRC.h"
+
 #define buttonPlay 2
 #define buttonForward 3
 #define buttonBack 1
@@ -16,7 +18,7 @@ boolean mutedBlinkOnOff = false;
 boolean muteBlinkMode = false;
 boolean singleClick = false;
 long lastSingleClick;
-int singleClickTimeout = 500;
+int singleClickTimeout = 650;
 SimpleRotary rotary(rotaryCW, rotaryCCW, rotaryClick);
 
 int StarleafColor[] = {0, 0, 255};//blue //zoom and starleaf have same mute control and the same colour coincidentally
@@ -51,6 +53,7 @@ void serialEventRun(void) {
 }
 void setup() {
   rotary.setErrorDelay(5);
+ 
   // rotary.setDebounceDelay(1);
   pinMode(buttonPlay, INPUT_PULLUP);
   pinMode(buttonForward, INPUT_PULLUP);
@@ -138,11 +141,12 @@ void SerialLoop() {
   }
   if ( i == 1 ) {
     
-    if (singleClick == true){
+    if (singleClick){
       Serial.println("DoubleClick");
       singleClick = false;
     }
     else {
+      Serial.println("Marking SingleClick");
       singleClick = true;
       lastSingleClick = millis();
     }
@@ -242,6 +246,38 @@ void NoSerialLoop() {
   }
   byte i = rotary.pushType(1000);
   if ( i == 1 ) {
+    if (singleClick){
+
+        if (mode == 0) {
+      Keyboard.press(KEY_LEFT_ALT);  //keyboard command for video off in Starleaf Alt+V
+      Keyboard.press('v');
+    }
+    else if (mode == 1) {
+      Keyboard.press(KEY_LEFT_CTRL);  //keyboard command for video off in Teams Ctrl+Shift+O
+      Keyboard.press(KEY_LEFT_SHIFT);
+      Keyboard.press('o');
+    }
+    else if (mode == 2) {
+      Keyboard.press(KEY_LEFT_CTRL);  //keyboard command for video off in Webex Ctrl+Shift+v
+      Keyboard.press(KEY_LEFT_SHIFT);
+      Keyboard.press('v');
+    }
+    else if (mode == 3) {
+      Keyboard.press(KEY_LEFT_CTRL);  //keyboard command for video off in Skype Ctrl+Shift+k
+      Keyboard.press(KEY_LEFT_SHIFT);
+      Keyboard.press('k');
+    }
+    delay(100);
+    Keyboard.releaseAll();
+    singleClick = false;
+    }
+    else{
+      singleClick = true;
+      lastSingleClick = millis();
+    }
+  }
+
+  if ((singleClick) && ((millis() - lastSingleClick) > singleClickTimeout)){
     if (mode == 0) {
       Keyboard.press(KEY_LEFT_ALT);  //keyboard command for mute in Starleaf Alt+A
       Keyboard.press('a');
@@ -261,6 +297,7 @@ void NoSerialLoop() {
     }
     delay(100);
     Keyboard.releaseAll();
+    singleClick = false;
   }
   if ( i == 2 ) {
     mode ++;
