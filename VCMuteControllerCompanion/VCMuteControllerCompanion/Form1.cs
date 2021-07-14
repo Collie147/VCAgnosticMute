@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -20,6 +20,7 @@ using AudioSwitcher.AudioApi.CoreAudio;
 using System.Threading;
 using WindowsInput.Native;
 using WindowsInput;
+using Microsoft.Win32;
 
 namespace VCMuteControllerCompanion
 {
@@ -67,6 +68,7 @@ namespace VCMuteControllerCompanion
         public static InputSimulator sim = new InputSimulator();
         public static bool inUse = false;
         public static int controllingApplicationPID;
+        public static string currentForeAppName;
         private Thread readThread = new Thread(Read);
         public Form1()
         {
@@ -154,6 +156,10 @@ namespace VCMuteControllerCompanion
                     if (message.Contains("MuteHold"))
                     {
 
+                    }
+                    if (message.Contains("DoubleClick"))
+                    {
+                        ActivateVideo();
                     }
                 }
                 catch (TimeoutException) { }
@@ -938,7 +944,8 @@ namespace VCMuteControllerCompanion
         private static void ActivateMicMute()
         {
             int activeWindowPID = CheckFocus();
-            if (controllingApplicationPID != activeWindowPID)
+
+            if ((controllingApplicationPID != activeWindowPID) && (currentForeAppName.ToLower() != controllingAppName.ToLower()))
             {
                 //BringMainWindowToFront(controllingApplicationPID);
                 BringMainWindowToFront(controllingAppName);
@@ -962,7 +969,57 @@ namespace VCMuteControllerCompanion
                 //ActivateVideoKey();
             }
         }
-        private static int CheckDeviceBusy()
+        private static void ActivateVideo()
+        {
+            bool webCamState = IsWebCamInUse();
+
+            int activeWindowPID = CheckFocus();
+            if ((controllingApplicationPID != activeWindowPID) && (currentForeAppName != controllingAppName))
+            {
+                //BringMainWindowToFront(controllingApplicationPID);
+                //BringMainWindowToFront(controllingAppName);
+                //Thread.Sleep(1000);
+                //if mute button
+                //ActivateMuteKey(controllingAppName);
+                Process[] processes = Process.GetProcessesByName(controllingAppName);
+                var procLength = processes.Length;
+                for (int x = procLength-1; x >= 0; x--)
+                {
+                    var currentProc = processes[x];
+                    SetForegroundWindow(currentProc.MainWindowHandle);
+                    Thread.Sleep(50);
+                    ActivateVideoKey(controllingAppName);
+                    Thread.Sleep(1000);
+                    var webCamInUse = IsWebCamInUse();
+                    if (webCamInUse != webCamState)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+                               
+                //MuteDefaultDevice();
+                //if video button
+                //ActivateVideoKey();
+                Thread.Sleep(100);
+                BringMainWindowToFront(activeWindowPID);
+
+            }
+            else
+            {
+                //if mute button
+                //ActivateMuteKey(controllingAppName);
+                ActivateVideoKey(controllingAppName);
+                Thread.Sleep(100);
+                //MuteDefaultDevice();
+                //if video button
+                //ActivateVideoKey();
+            }
+        }
+        private static int CheckDeviceBusy()//maybe see if you can check the parent app ID? webcam many not always be in use
         {
             //CoreAudioDevice defaultDevice = new CoreAudioController().DefaultCaptureDevice;
             //var muted = defaultDevice.IsMuted;
@@ -1017,6 +1074,55 @@ namespace VCMuteControllerCompanion
 
             return (processID);
         }
+        private static bool IsWebCamInUse()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam\NonPackaged"))
+                {
+                    foreach (var subKeyName in key.GetSubKeyNames())
+                    {
+                        using (var subKey = key.OpenSubKey(subKeyName))
+                        {
+                            if (subKey.GetValueNames().Contains("LastUsedTimeStop"))
+                            {
+                                var endTime = subKey.GetValue("LastUsedTimeStop") is long ? (long)subKey.GetValue("LastUsedTimeStop") : -1;
+                                if (endTime <= 0)
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                try
+                {
+                    using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam\NonPackaged"))
+                    {
+                        foreach (var subKeyName in key.GetSubKeyNames())
+                        {
+                            using (var subKey = key.OpenSubKey(subKeyName))
+                            {
+                                if (subKey.GetValueNames().Contains("LastUsedTimeStop"))
+                                {
+                                    var endTime = subKey.GetValue("LastUsedTimeStop") is long ? (long)subKey.GetValue("LastUsedTimeStop") : -1;
+                                    if (endTime <= 0)
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
         private static int CheckFocus()
         {
             int currentFocusPID = 0;
@@ -1028,6 +1134,7 @@ namespace VCMuteControllerCompanion
             if (currentFocusPID != p.Id)
             {
                 currentFocusPID = p.Id;
+                currentForeAppName = p.ProcessName;
             }
             return currentFocusPID;
         }
@@ -1042,9 +1149,15 @@ namespace VCMuteControllerCompanion
         private static void ActivateMuteKey(String appName)
         {
             switch (appName.ToLower())
-            {
+            {   
+
                 case "teams":
-                    sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.CONTROL, new[] { VirtualKeyCode.SHIFT, VirtualKeyCode.VK_M });
+                    sim.Keyboard.KeyDown(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyDown(VirtualKeyCode.SHIFT);
+                    sim.Keyboard.KeyPress(VirtualKeyCode.VK_M);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.SHIFT);
+                    //sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.CONTROL, new[] { VirtualKeyCode.SHIFT, VirtualKeyCode.VK_M });
                     //send serial command to device to send Teams Macro
                     break;
                 case "zoom":
@@ -1061,6 +1174,49 @@ namespace VCMuteControllerCompanion
                     break;
                 case "skype":
                     sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.LWIN, VirtualKeyCode.F4);
+                    //send serial command to device to send Skype Macro
+                    break;
+
+            }
+            //mySerialPort.WriteLine("MuteGo");
+        }
+        private static void ActivateVideoKey(String appName)
+        {
+            switch (appName.ToLower())
+            {
+                case "teams":
+                    sim.Keyboard.KeyDown(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyDown(VirtualKeyCode.SHIFT);
+                    sim.Keyboard.KeyPress(VirtualKeyCode.VK_O);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.SHIFT);
+                    //sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.CONTROL, new[] { VirtualKeyCode.SHIFT, VirtualKeyCode.VK_O });
+                    //send serial command to device to send Teams Macro
+                    break;
+                case "zoom":
+                    sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.LMENU, VirtualKeyCode.VK_V);
+                    //send serial command to device to send Zoom Macro
+                    break;
+                case "starleaf":
+                    sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.LMENU, VirtualKeyCode.VK_V);
+                    //send serial command to device to send starleaf Macro
+                    break;
+                case "webex":
+                    sim.Keyboard.KeyDown(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyDown(VirtualKeyCode.SHIFT);
+                    sim.Keyboard.KeyPress(VirtualKeyCode.VK_V);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.SHIFT);
+                    //sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.CONTROL, new[] { VirtualKeyCode.SHIFT, VirtualKeyCode.VK_V });
+                    //send serial command to device to send Webex Macro
+                    break;
+                case "skype":
+                    sim.Keyboard.KeyDown(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyDown(VirtualKeyCode.SHIFT);
+                    sim.Keyboard.KeyPress(VirtualKeyCode.VK_K);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.CONTROL);
+                    sim.Keyboard.KeyUp(VirtualKeyCode.SHIFT);
+                    //sim.Keyboard.ModifiedKeyStroke(VirtualKeyCode.CONTROL, new[] { VirtualKeyCode.SHIFT, VirtualKeyCode.VK_K });
                     //send serial command to device to send Skype Macro
                     break;
 
